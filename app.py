@@ -10,8 +10,8 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-BOT_TOKEN = os.getenv("8272757028:AAHhfNMwgF3jiB7eVGpeHn5ARpLr2TjhD7I")
-CHAT_ID = os.getenv("716666119")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
 if not BOT_TOKEN or not CHAT_ID:
     raise RuntimeError("Missing BOT_TOKEN or CHAT_ID")
