@@ -52,7 +52,7 @@ def send_to_telegram(data, session_id, type_label):
     }
 
     try:
-        requests.post(f"https://telegram.org{BOT_TOKEN}/sendMessage", json=payload)
+        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json=payload)
     except Exception as e:
         print(f"Telegram error: {e}")
 
